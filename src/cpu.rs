@@ -1,21 +1,112 @@
+use std::{
+    fs::File,
+    io::{Read, Seek, SeekFrom},
+};
+
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
+use wasm_bindgen::prelude::wasm_bindgen;
+
+use crate::display::Display;
+
 type Bit = bool;
 
 const DISPLAY_HEIGHT: usize = 32;
 const DISPLAY_WIDTH: usize = 64;
 
+#[wasm_bindgen]
+#[derive(Serialize, Deserialize)]
 pub struct CPU {
-    pub position_in_memory: usize,
-    pub index_register: u16,
-    pub registers: [u8; 16],
-    pub memory: [u8; 0x1000],
-    pub frame_buffer: [Bit; 2048],
-    pub stack: [u16; 16],
-    pub stack_pointer: usize,
-    pub delay_timer: u8,
-    pub sound_timer: u8,
+    position_in_memory: usize,
+    index_register: u16,
+    registers: [u8; 16],
+    #[serde(with = "BigArray")]
+    memory: [u8; 0x1000],
+    #[serde(with = "BigArray")]
+    frame_buffer: [Bit; 2048],
+    stack: [u16; 16],
+    stack_pointer: usize,
+    delay_timer: u8,
+    sound_timer: u8,
 }
 
 impl CPU {
+    pub fn print_to_console(&self) {
+        Display::print_framebuffer(self.frame_buffer);
+    }
+
+    pub fn load_rom(&mut self, path: &str) {
+        const BYTES_PER_LINE: usize = 16;
+
+        let mut mem_pos = 0x200;
+        let mut f = File::open(path).expect("Unable to open file.");
+        let mut f_pos = 0;
+        let mut buffer = [0; BYTES_PER_LINE];
+
+        loop {
+            let read_bytes = f.read(&mut buffer).unwrap();
+
+            for i in 0..read_bytes {
+                self.memory[mem_pos] = buffer[i];
+                mem_pos += 1;
+            }
+
+            f_pos += BYTES_PER_LINE;
+            let seek_result = f.seek(SeekFrom::Start(f_pos.try_into().unwrap()));
+
+            match seek_result {
+                Err(_) => break,
+                _ => (),
+            }
+
+            if read_bytes == 0 {
+                break;
+            }
+        }
+    }
+}
+
+#[wasm_bindgen]
+impl CPU {
+    pub fn new() -> Self {
+        let mut _cpu = CPU {
+            registers: [0; 16],
+            memory: [0; 4096],
+            position_in_memory: 0x200,
+            stack: [0; 16],
+            stack_pointer: 0,
+            index_register: 0,
+            frame_buffer: [false; 2048],
+            delay_timer: 0,
+            sound_timer: 0,
+        };
+
+        let sprite_data = [
+            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+            0x20, 0x60, 0x20, 0x20, 0x70, // 1
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+            0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+        ];
+
+        for (i, data) in sprite_data.iter().enumerate() {
+            _cpu.memory[i] = *data;
+        }
+
+        _cpu
+    }
+
     fn read_opcode(&self) -> u16 {
         let p = self.position_in_memory;
         let op_byte1 = self.memory[p] as u16;
@@ -214,7 +305,7 @@ impl CPU {
         self.memory[self.index_register as usize + 2] = (x % 100) % 10;
     }
 
-    pub fn display(&mut self, vx: usize, vy: usize, n: u8) {
+    fn display(&mut self, vx: usize, vy: usize, n: u8) {
         let x = self.registers[vx];
         let y = self.registers[vy];
 
