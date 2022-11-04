@@ -68,6 +68,7 @@ impl CPU {
 
 #[wasm_bindgen]
 impl CPU {
+    #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         let mut _cpu = CPU {
             registers: [0; 16],
