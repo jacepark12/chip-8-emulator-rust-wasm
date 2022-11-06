@@ -3,11 +3,13 @@ use std::{
     io::{Read, Seek, SeekFrom},
 };
 
+use js_sys::{Array, Uint8Array};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
-use crate::display::Display;
+use crate::{display::Display, keypad::Keypad};
 
 type Bit = bool;
 
@@ -28,6 +30,7 @@ pub struct CPU {
     stack_pointer: usize,
     delay_timer: u8,
     sound_timer: u8,
+    pub keypad: Keypad,
 }
 
 impl CPU {
@@ -35,7 +38,7 @@ impl CPU {
         Display::print_framebuffer(self.frame_buffer);
     }
 
-    pub fn load_rom(&mut self, path: &str) {
+    pub fn load_rom_from_path(&mut self, path: &str) {
         const BYTES_PER_LINE: usize = 16;
 
         let mut mem_pos = 0x200;
@@ -80,6 +83,7 @@ impl CPU {
             frame_buffer: [false; 2048],
             delay_timer: 0,
             sound_timer: 0,
+            keypad: Keypad::new(),
         };
 
         let sprite_data = [
@@ -106,6 +110,26 @@ impl CPU {
         }
 
         _cpu
+    }
+
+    // Returns array of bool to slice
+    pub fn get_frame_buffers(&self) -> Uint8Array {
+        let js_array: Array = self
+            .frame_buffer
+            .into_iter()
+            .map(|x| JsValue::from(if x { 1 } else { 0 }))
+            .collect();
+
+        js_sys::Uint8Array::new(&js_array)
+    }
+
+    pub fn load_rom(&mut self, rom: &[u8]) {
+        let mut mem_pos = 0x200;
+
+        for byte in rom.iter() {
+            self.memory[mem_pos] = *byte;
+            mem_pos = mem_pos + 1;
+        }
     }
 
     fn read_opcode(&self) -> u16 {
@@ -258,6 +282,13 @@ impl CPU {
         self.position_in_memory = addr as usize;
     }
 
+    fn rand(&mut self, vx: u8, kk: u8) {
+        let mut rng = rand::thread_rng();
+
+        let n1: u8 = rng.gen();
+        self.registers[vx as usize] = kk & n1;
+    }
+
     fn jump(&mut self, nnn: u16) {
         self.position_in_memory = nnn as usize;
     }
@@ -283,19 +314,20 @@ impl CPU {
     }
 
     fn fx55(&mut self, vx: u8) {
-        self.memory[(self.index_register as usize)..(self.index_register + vx as u16) as usize]
-            .copy_from_slice(&self.registers[0..(vx as usize)]);
+        self.memory[(self.index_register as usize)..(self.index_register + 1 + vx as u16) as usize]
+            .copy_from_slice(&self.registers[0..(vx as usize + 1)]);
 
-        self.index_register += vx as u16;
-        self.index_register += 1;
+        // self.index_register += vx as u16;
+        // self.index_register += 1;
     }
 
     fn fx65(&mut self, vx: u8) {
-        self.memory[(self.index_register as usize)..(self.index_register + vx as u16) as usize]
-            .copy_from_slice(&self.registers[0..(vx as usize)]);
-
-        self.index_register += vx as u16;
-        self.index_register += 1;
+        self.registers[0..(vx as usize + 1)].copy_from_slice(
+            &self.memory
+                [(self.index_register as usize)..(self.index_register + 1 + vx as u16) as usize],
+        );
+        // self.index_register += vx as u16;
+        // self.index_register += 1;
     }
 
     fn fx33(&mut self, vx: u8) {
@@ -304,6 +336,31 @@ impl CPU {
         self.memory[self.index_register as usize] = x / 100;
         self.memory[self.index_register as usize + 1] = (x / 10) % 10;
         self.memory[self.index_register as usize + 2] = (x % 100) % 10;
+    }
+
+    fn skp(&mut self, vx: u8) {
+        if self.keypad.key_state(self.registers[vx as usize]) == 1 {
+            self.position_in_memory += 2;
+        }
+    }
+
+    fn sknp(&mut self, vx: u8) {
+        if self.keypad.key_state(self.registers[vx as usize]) == 0 {
+            self.position_in_memory += 2;
+        }
+    }
+
+    fn wait_key(&mut self, vx: u8) {
+        match self.keypad.get_down_key() {
+            Some(key) => {
+                self.registers[vx as usize] = key;
+                // self.position_in_memory += 2;
+            }
+            None => {
+                // Execution stops until a key is pressed
+                self.position_in_memory -= 2;
+            }
+        }
     }
 
     fn display(&mut self, vx: usize, vy: usize, n: u8) {
@@ -339,7 +396,7 @@ impl CPU {
                     false => self.registers[0xF as usize] = 0,
                 }
 
-                self.frame_buffer[frame_buffer_index] = mask_result;
+                self.frame_buffer[frame_buffer_index] = buf ^ mask_result;
             }
         }
     }
@@ -387,8 +444,12 @@ impl CPU {
             (0x9, _, _, 0x0) => self.sne_xy(x, y),
             (0xA, _, _, _) => self.index_register = nnn,
             (0xB, _, _, _) => self.jump_v0(nnn),
+            (0xC, _, _, _) => self.rand(x, kk),
             (0xD, _, _, _) => self.display(x as usize, y as usize, d),
+            (0xE, _, 0x9, 0xE) => self.skp(x),
+            (0xE, _, 0xA, 0x1) => self.sknp(x),
             (0xF, _, 0x0, 0x7) => self.set_vx_dt(x),
+            (0xF, _, 0x0, 0xA) => self.wait_key(x),
             (0xF, _, 0x1, 0x5) => self.set_dt_vx(x),
             (0xF, _, 0x1, 0x8) => self.set_st_vx(x),
             (0xF, _, 0x1, 0xE) => self.index_register += self.registers[x as usize] as u16,
