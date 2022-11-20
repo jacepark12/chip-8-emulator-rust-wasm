@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en-US">
+
+<head>
+    <meta charset="utf-8" />
+    <title>hello-wasm example</title>
+    <script src="http://localhost:8000/target.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.1.min.js"
+        integrity="sha256-o88AwQnZB+VDvE9tvIXrMQaPlFFSUTR+nldQm1LuPXQ=" crossorigin="anonymous"></script>
+    <style>
+        body {
+            background: black;
+        }
+
+        #wrapper {
+            width: 100%;
+        }
+
+        #canvas {
+            padding-left: 0;
+            padding-right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            margin-bottom: 20px;
+            display: block;
+            width: 512px;
+            height: 256px;
+            border: 1px solid #33ff66;
+        }
+
+        #opcode-container {
+            height: 300px;
+            overflow: scroll;
+            margin-top: 50px;
+        }
+
+        #opcode {
+            color: #33ff66;
+            height: 30px;
+            width: 40px;
+            font-size: 25px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <script defer>
+
+        function map_key_code(key_code) {
+
+            console.log('keycode : ', key_code)
+            let mapped = undefined;
+            switch (key_code) {
+                case 'KeyA':
+                    mapped = 'A';
+                    break;
+                case 'KeyB':
+                    mapped = 'B';
+                    break;
+                case 'KeyC':
+                    mapped = 'C';
+                    break;
+                case 'KeyD':
+                    mapped = 'D';
+                case 'KeyE':
+                    mapped = 'E';
+                    break;
+                case 'KeyF':
+                    mapped = 'F';
+                    break;
+                case 'Numpad0':
+                    mapped = '0';
+                    break;
+                case 'Numpad1':
+                    mapped = '1';
+                    break;
+                case 'Numpad2':
+                    mapped = '2';
+                    break;
+                case 'Numpad3':
+                    mapped = '3';
+                    break;
+                case 'Numpad4':
+                    mapped = '4';
+                    break;
+                case 'Numpad5':
+                    mapped = '5';
+                    break;
+                case 'Numpad6':
+                    mapped = '6';
+                    break;
+                case 'Numpad7':
+                    mapped = '7';
+                    break;
+                case 'Numpad8':
+                    mapped = '8';
+                    break;
+                case 'Numpad9':
+                    mapped = '9';
+                    break;
+            }
+
+            return mapped;
+        }
+
+    </script>
+
+    <script type="module">
+        import init, { CPU } from "./pkg/chip_8_emulator_rust.js";
+        async function init_emulator() {
+            await init();
+            let cpu = new CPU();
+
+            // initialise the canvas
+            const canvas = document.getElementById("canvas");
+            console.log('canvas : ', canvas)
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, 64, 32);
+
+            ctx.webkitImageSmoothingEnabled = false;
+            ctx.mozImageSmoothingEnabled = false;
+            ctx.imageSmoothingEnabled = false;
+
+            const updateDisplay = (displayMemory) => {
+
+                const imageData = ctx.createImageData(64, 32);
+                for (let i = 0; i < displayMemory.length; i++) {
+                    imageData.data[i * 4] = displayMemory[i] === 1 ? 0x33 : 0;
+                    imageData.data[i * 4 + 1] = displayMemory[i] === 1 ? 0xff : 0;
+                    imageData.data[i * 4 + 2] = displayMemory[i] === 1 ? 0x66 : 0;
+                    imageData.data[i * 4 + 3] = 255;
+                }
+
+                // reference : https://stackoverflow.com/questions/51387989/change-image-size-with-ctx-putimagedata
+                // we use the main canvas as renderer
+                ctx.putImageData(imageData, 0, 0);
+                // Now we have an unscaled version of our ImageData
+                // let's make the compositing mode to 'copy' so that our next drawing op erases whatever was there previously
+                // just like putImageData would have done
+                ctx.globalCompositeOperation = 'copy';
+                // now we can draw ourself over ourself.
+                ctx.drawImage(canvas,
+                    0, 0, imageData.width, imageData.height, // grab the ImageData part
+                    0, 0, canvas.width, canvas.height // scale it
+                );
+            };
+
+            document.addEventListener('keydown', (event) => {
+                let key = map_key_code(event.code);
+                console.log('keydown : ', key);
+                if (key) {
+
+                    // cpu.keypad.key_down(key);
+                    // 이렇게 하면 정수형으로 들어가서 안된다?
+                    // cpu.keypad.key_down('2');
+                    // console.log('state : ', cpu.keypad.key_state(2))
+
+                    cpu.test_key_down();
+                    console.log('state : ', cpu.test_key_state());
+                }
+            }, false);
+
+            document.addEventListener('keyup', (event) => {
+                let key = map_key_code(event.code);
+                console.log('keyup : ', key)
+                if (key) {
+                    cpu.keypad.key_up(`${key}`);
+                }
+            }, false);
+
+            // fetch rom and load to CPU
+            fetch(`rom/chip8-test-suite.ch8`)
+                .then(i => i.arrayBuffer())
+                .then(buffer => {
+                    // write the ROM to memory
+                    const rom = new Uint8Array(buffer);
+                    console.log('rom : ', rom);
+                    console.log('buffer : ', buffer);
+
+                    // load rom to cpu
+                    cpu.load_rom(rom);
+
+                    // run cpu 
+                    const runloop = () => {
+                        cpu.run_cycle();
+                        let opcode = ('0000' + (cpu.dump_opcode()).toString(16).toUpperCase()).slice(-4);
+
+                        $('#opcode-container').prepend(`<div id="opcode">${opcode}</div>`)
+                        updateDisplay(cpu.get_frame_buffers());
+                        window.requestAnimationFrame(runloop);
+                    };
+                    window.requestAnimationFrame(runloop);
+                });
+
+            updateDisplay();
+        }
+        // init().then(() => {
+
+        // });
+        init_emulator();
+    </script>
+
+    <div id='wrapper'>
+        <canvas id='canvas' width='640' height='320'></canvas>
+
+        <div id='opcode-container'></div>
+    </div>
+</body>
+
+</html>

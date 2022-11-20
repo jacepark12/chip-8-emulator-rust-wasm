@@ -66,6 +66,10 @@ impl CPU {
                 break;
             }
         }
+
+        // TODO : Delete tmp code
+        // self.memory[0x1FF] = 5;
+        // self.memory[0x1FE] = 3;
     }
 }
 
@@ -110,6 +114,21 @@ impl CPU {
         }
 
         _cpu
+    }
+
+    // Dump previous (executed) opcode
+    pub fn dump_opcode(&self) -> u16 {
+        let p = self.position_in_memory - 2;
+        let op_byte1 = self.memory[p] as u16;
+        let op_byte2 = self.memory[p + 1] as u16;
+
+        op_byte1 << 8 | op_byte2
+    }
+
+    pub fn dump_memory(&self) -> Uint8Array {
+        let js_array: Array = self.memory.into_iter().map(|x| JsValue::from(x)).collect();
+
+        js_sys::Uint8Array::new(&js_array)
     }
 
     // Returns array of bool to slice
@@ -349,8 +368,9 @@ impl CPU {
             self.position_in_memory += 2;
         }
     }
-
+    // TODO : 이 부분 체크. 여기에 문제가 있는 것 같은데?
     fn wait_key(&mut self, vx: u8) {
+        // self.position_in_memory -= 2;
         match self.keypad.get_down_key() {
             Some(key) => {
                 self.registers[vx as usize] = key;
@@ -358,10 +378,24 @@ impl CPU {
             }
             None => {
                 // Execution stops until a key is pressed
-                self.position_in_memory -= 2;
+                return;
             }
         }
     }
+
+    // TODO : Delete tmp code
+    // fn wait_key(&mut self, vx: u8) {
+    //     match self.keypad.get_down_key() {
+    //         Some(key) => {
+    //             self.registers[vx as usize] = key;
+    //             // self.position_in_memory += 2;
+    //         }
+    //         None => {
+    //             // Execution stops until a key is pressed
+    //             self.position_in_memory -= 2;
+    //         }
+    //     }
+    // }
 
     fn display(&mut self, vx: usize, vy: usize, n: u8) {
         let x = self.registers[vx];
@@ -458,5 +492,15 @@ impl CPU {
             (0xF, _, 0x6, 0x5) => self.fx65(x),
             _ => todo!("opcode {:04x}", opcode),
         }
+    }
+
+    // TODO : Delete tmp code
+    // 이렇게 해야 제대로 되고 js에서 직접 cpu.keypad로 접근해서 하면 안된다?
+    pub fn test_key_down(&mut self) {
+        self.keypad.key_down('2');
+    }
+
+    pub fn test_key_state(&self) -> u8 {
+        self.keypad.key_state(0x2)
     }
 }

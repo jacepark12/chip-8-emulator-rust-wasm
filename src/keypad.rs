@@ -119,6 +119,8 @@ mod tests {
     fn test_get_down_key() {
         let mut keypad = Keypad::new();
 
+        assert_eq!(keypad.get_down_key(), None);
+
         keypad.key_down('C');
 
         assert_eq!(keypad.get_down_key(), Some(0xC));
