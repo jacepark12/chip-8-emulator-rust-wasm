@@ -11,7 +11,7 @@ pub struct Keypad {
 impl Keypad {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        let mut keys = [0; 16];
+        let keys = [0; 16];
         Keypad { keys: keys }
     }
 
@@ -118,6 +118,8 @@ mod tests {
     #[test]
     fn test_get_down_key() {
         let mut keypad = Keypad::new();
+
+        assert_eq!(keypad.get_down_key(), None);
 
         keypad.key_down('C');
 
