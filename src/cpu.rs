@@ -331,9 +331,6 @@ impl CPU {
     fn fx55(&mut self, vx: u8) {
         self.memory[(self.index_register as usize)..(self.index_register + 1 + vx as u16) as usize]
             .copy_from_slice(&self.registers[0..(vx as usize + 1)]);
-
-        // self.index_register += vx as u16;
-        // self.index_register += 1;
     }
 
     fn fx65(&mut self, vx: u8) {
@@ -341,8 +338,6 @@ impl CPU {
             &self.memory
                 [(self.index_register as usize)..(self.index_register + 1 + vx as u16) as usize],
         );
-        // self.index_register += vx as u16;
-        // self.index_register += 1;
     }
 
     fn fx33(&mut self, vx: u8) {
