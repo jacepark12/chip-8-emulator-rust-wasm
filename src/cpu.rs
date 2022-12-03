@@ -112,6 +112,21 @@ impl CPU {
         _cpu
     }
 
+    // Dump previous (executed) opcode
+    pub fn dump_opcode(&self) -> u16 {
+        let p = self.position_in_memory - 2;
+        let op_byte1 = self.memory[p] as u16;
+        let op_byte2 = self.memory[p + 1] as u16;
+
+        op_byte1 << 8 | op_byte2
+    }
+
+    pub fn dump_memory(&self) -> Uint8Array {
+        let js_array: Array = self.memory.into_iter().map(|x| JsValue::from(x)).collect();
+
+        js_sys::Uint8Array::new(&js_array)
+    }
+
     // Returns array of bool to slice
     pub fn get_frame_buffers(&self) -> Uint8Array {
         let js_array: Array = self
@@ -349,16 +364,14 @@ impl CPU {
             self.position_in_memory += 2;
         }
     }
-
     fn wait_key(&mut self, vx: u8) {
         match self.keypad.get_down_key() {
             Some(key) => {
                 self.registers[vx as usize] = key;
-                // self.position_in_memory += 2;
             }
             None => {
                 // Execution stops until a key is pressed
-                self.position_in_memory -= 2;
+                return;
             }
         }
     }
@@ -458,5 +471,13 @@ impl CPU {
             (0xF, _, 0x6, 0x5) => self.fx65(x),
             _ => todo!("opcode {:04x}", opcode),
         }
+    }
+
+    pub fn key_down(&mut self, key: char) {
+        self.keypad.key_down(key);
+    }
+
+    pub fn key_up(&mut self, key: char) {
+        self.keypad.key_up(key);
     }
 }
