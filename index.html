@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en-US">
+
+<head>
+    <meta charset="utf-8" />
+    <title>CHIP-8 Emulator</title>
+    <script src="https://code.jquery.com/jquery-3.6.1.min.js"
+        integrity="sha256-o88AwQnZB+VDvE9tvIXrMQaPlFFSUTR+nldQm1LuPXQ=" crossorigin="anonymous"></script>
+    <style>
+        body {
+            background: black;
+        }
+
+        #wrapper {
+            width: 100%;
+        }
+
+        #canvas {
+            padding-left: 0;
+            padding-right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            margin-bottom: 20px;
+            display: block;
+            width: 512px;
+            height: 256px;
+            border: 1px solid #33ff66;
+        }
+
+        #opcode-container {
+            overflow: scroll;
+            margin-top: 50px;
+        }
+
+        #opcode {
+            color: #33ff66;
+            height: 30px;
+            width: 40px;
+            font-size: 25px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #control-button {
+            border: 2px solid #33ff66;
+            color: #33ff66;
+            background-color: black;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 16px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+        }
+
+        #control-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+    </style>
+</head>
+
+<body>
+    <script defer>
+
+        function map_key_code(key_code) {
+
+            let mapped = undefined;
+            switch (key_code) {
+                case 'KeyA':
+                    mapped = 'A';
+                    break;
+                case 'KeyB':
+                    mapped = 'B';
+                    break;
+                case 'KeyC':
+                    mapped = 'C';
+                    break;
+                case 'KeyD':
+                    mapped = 'D';
+                case 'KeyE':
+                    mapped = 'E';
+                    break;
+                case 'KeyF':
+                    mapped = 'F';
+                    break;
+                case 'Numpad0':
+                case 'Digit0':
+                    mapped = '0';
+                    break;
+                case 'Numpad1':
+                case 'Digit1':
+                    mapped = '1';
+                    break;
+                case 'Numpad2':
+                case 'Digit2':
+                    mapped = '2';
+                    break;
+                case 'Numpad3':
+                case 'Digit3':
+                    mapped = '3';
+                    break;
+                case 'Numpad4':
+                case 'Digit4':
+                    mapped = '4';
+                    break;
+                case 'Numpad5':
+                case 'Digit5':
+                    mapped = '5';
+                    break;
+                case 'Numpad6':
+                case 'Digit6':
+                    mapped = '6';
+                    break;
+                case 'Numpad7':
+                case 'Digit7':
+                    mapped = '7';
+                    break;
+                case 'Numpad8':
+                case 'Digit8':
+                    mapped = '8';
+                    break;
+                case 'Numpad9':
+                case 'Digit9':
+                    mapped = '9';
+                    break;
+            }
+
+            return mapped;
+        }
+
+    </script>
+
+    <script type="module">
+        import init, { CPU } from "./pkg/chip_8_emulator_rust.js";
+
+        let cpu_running = true;
+        let request_frame_id = undefined;
+
+        async function init_emulator() {
+            await init();
+            let cpu = new CPU();
+
+            const handle_control = () => {
+                let control_button = $('#control-button');
+
+                if (cpu_running) {
+                    control_button.html('Start');
+                    window.cancelAnimationFrame(request_frame_id);
+                } else {
+                    control_button.html('Stop');
+                    request_frame_id = window.requestAnimationFrame(runloop);
+                }
+
+                cpu_running = !cpu_running;
+            }
+
+            // initialise the canvas
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, 64, 32);
+
+            ctx.webkitImageSmoothingEnabled = false;
+            ctx.mozImageSmoothingEnabled = false;
+            ctx.imageSmoothingEnabled = false;
+
+            const updateDisplay = (displayMemory) => {
+
+                const imageData = ctx.createImageData(64, 32);
+                for (let i = 0; i < displayMemory.length; i++) {
+                    imageData.data[i * 4] = displayMemory[i] === 1 ? 0x33 : 0;
+                    imageData.data[i * 4 + 1] = displayMemory[i] === 1 ? 0xff : 0;
+                    imageData.data[i * 4 + 2] = displayMemory[i] === 1 ? 0x66 : 0;
+                    imageData.data[i * 4 + 3] = 255;
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+                ctx.globalCompositeOperation = 'copy';
+
+                ctx.drawImage(canvas,
+                    0, 0, imageData.width, imageData.height,
+                    0, 0, canvas.width, canvas.height
+                );
+            };
+
+            document.addEventListener('keydown', (event) => {
+                let key = map_key_code(event.code);
+                if (key) {
+                    cpu.key_down(`${key}`);
+                }
+            }, false);
+
+            document.addEventListener('keyup', (event) => {
+                let key = map_key_code(event.code);
+                if (key) {
+                    cpu.key_up(`${key}`);
+                }
+            }, false);
+
+            const runloop = () => {
+
+                cpu.run_cycle();
+                let opcode = ('0000' + (cpu.dump_opcode()).toString(16).toUpperCase()).slice(-4);
+
+                $('#opcode-container').prepend(`<div id="opcode">${opcode}</div>`)
+                updateDisplay(cpu.get_frame_buffers());
+
+                request_frame_id = window.requestAnimationFrame(runloop);
+            };
+
+            // fetch rom and load to CPU
+            fetch(`rom/chip8-test-suite.ch8`)
+                .then(i => i.arrayBuffer())
+                .then(buffer => {
+                    // write the ROM to memory
+                    const rom = new Uint8Array(buffer);
+
+                    // load rom to cpu
+                    cpu.load_rom(rom);
+
+                    // run cpu 
+                    request_frame_id = window.requestAnimationFrame(runloop);
+                });
+
+            $('#control-button').on('click', handle_control);
+        }
+
+        init_emulator();
+    </script>
+
+    <div id='wrapper'>
+        <canvas id='canvas' width='640' height='320'></canvas>
+        <div id='control-wrapper'>
+            <button id='control-button'>Start</button>
+        </div>
+        <br />
+        <div id='opcode-container'></div>
+    </div>
+</body>
+
+</html>
