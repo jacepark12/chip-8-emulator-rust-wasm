@@ -1,0 +1,12 @@
+{
+  "name": "chip-8-emulator-rust",
+  "version": "0.1.0",
+  "files": [
+    "chip_8_emulator_rust_bg.wasm",
+    "chip_8_emulator_rust.js",
+    "chip_8_emulator_rust.d.ts"
+  ],
+  "module": "chip_8_emulator_rust.js",
+  "types": "chip_8_emulator_rust.d.ts",
+  "sideEffects": false
+}
